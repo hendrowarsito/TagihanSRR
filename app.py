@@ -142,7 +142,10 @@ def terbilang_rupiah(amount: float) -> str:
 
 
 def format_rp(amount: float) -> str:
-    return f"{int(round(amount)):,}".replace(",", ".")
+    formatted = f"{amount:,.2f}"
+    int_part, dec_part = formatted.split(".")
+    int_part = int_part.replace(",", ".")
+    return f"{int_part},{dec_part}"
 
 
 def format_tgl(d: date) -> str:
@@ -659,14 +662,20 @@ with col_left:
             ed_kode_pos = st.text_input(
                 "Kode Pos", value=sv("kode_pos"), key=f"ed_kode_pos_{rk}"
             )
-        fee_default = float(row.get("proposed_fee", 0) or 0)
+        fee_default = float(row.get("proposed_fee", 0) or 0) / 1.11
         ed_fee_str = st.text_input(
-            "Proposed Fee (Rp)",
+            "Proposed Fee Sebelum PPN (Rp)",
             value=format_rp(fee_default),
             key=f"ed_fee_{rk}",
-            help="Angka saja, pemisah titik/koma diabaikan",
+            help="Nilai dari sheet dibagi 1,11 untuk mendapatkan fee sebelum PPN (11%)",
         )
-        proposed_fee_raw = float(re.sub(r"[^\d]", "", ed_fee_str) or 0)
+        proposed_fee_raw = float(re.sub(r"[^\d.,]", "", ed_fee_str).replace(".", "").replace(",", ".") or 0)
+        ed_kode_penyusun = st.text_input(
+            "Kode Penyusun",
+            value=sv("kode_penyusun"),
+            key=f"ed_kode_penyusun_{rk}",
+            help="Kode penyusun laporan, diambil dari kolom kode_penyusun di spreadsheet",
+        )
         st.markdown("</div>", unsafe_allow_html=True)
 
     # ── 3. Isian Manual ─────────────────────────────────────────────────────
@@ -797,6 +806,7 @@ with col_left:
             "{{Norek}}": bank_info["norek"],
             "{{title_Up}}": title_up,
             "{{title_up}}": title_up,
+            "{{kode_penyusun}}": ed_kode_penyusun,
         }
         if "nama_file" in df_pt.columns:
             reps["{{nama_file}}"] = sv("nama_file")
