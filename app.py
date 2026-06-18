@@ -142,12 +142,26 @@ def terbilang_rupiah(amount: float) -> str:
 
 
 def format_rp(amount: float) -> str:
-    return f"{int(round(amount)):,}".replace(",", ".")
+    formatted = f"{amount:,.2f}"
+    int_part, dec_part = formatted.split(".")
+    int_part = int_part.replace(",", ".")
+    return f"{int_part},{dec_part}"
 
 
 def format_tgl(d: date) -> str:
     """Tanggal surat header — hanya tanggal, tanpa prefix 'Jakarta, '."""
     return f"{d.day} {BULAN_ID[d.month]} {d.year}"
+
+
+def extract_kode_pt(no_proposal: str) -> str:
+    """Ambil Kode_PT dari no_proposal: segmen sebelum segmen terakhir.
+
+    Contoh: 260101.003/SRR-JK/SPN-ABF/BJTI/OR -> BJTI
+    """
+    parts = [p.strip() for p in str(no_proposal).split("/") if p.strip()]
+    if len(parts) >= 2:
+        return parts[-2]
+    return ""
 
 
 # ─── HELPER: LOAD DATA ────────────────────────────────────────────────────────
@@ -575,6 +589,7 @@ with col_left:
             == sel_no
         ]
 
+        sel_file = ""
         if "nama_file" in df_pt.columns:
             nama_files = (
                 df_pt["nama_file"]
@@ -616,22 +631,50 @@ with col_left:
                 return val_str[:-2]
             return val_str
 
+        st.caption("✏️ Data di bawah ini dapat diedit manual jika diperlukan.")
+
+        # Key unik per baris terpilih agar nilai default ter-reset
+        # saat pemberi tugas / proposal / nama file berganti
+        rk = f"{selected_pt}|{sel_no}|{sel_file}"
+
         c1, c2 = st.columns(2)
         with c1:
-            st.text_input("No. Proposal", value=sv("no_proposal"), disabled=True)
-            st.text_input(
-                "Tanggal Proposal", value=sv("tanggal_proposal"), disabled=True
+            ed_no_proposal = st.text_input(
+                "No. Proposal", value=sv("no_proposal"), key=f"ed_no_proposal_{rk}"
             )
-            st.text_input("Alamat 1", value=sv("alamat_1"), disabled=True)
-            st.text_input("Kota", value=sv("kota"), disabled=True)
+            ed_tanggal_proposal = st.text_input(
+                "Tanggal Proposal",
+                value=sv("tanggal_proposal"),
+                key=f"ed_tgl_proposal_{rk}",
+            )
+            ed_alamat_1 = st.text_input(
+                "Alamat 1", value=sv("alamat_1"), key=f"ed_alamat_1_{rk}"
+            )
+            ed_kota = st.text_input("Kota", value=sv("kota"), key=f"ed_kota_{rk}")
         with c2:
-            st.text_input("U.p.", value=sv("up"), disabled=True)
-            st.text_input("Penugasan", value=sv("penugasan"), disabled=True)
-            st.text_input("Alamat 2", value=sv("alamat_2"), disabled=True)
-            st.text_input("Kode Pos", value=sv("kode_pos"), disabled=True)
-        proposed_fee_raw = float(row.get("proposed_fee", 0) or 0)
-        st.text_input(
-            "Proposed Fee (Rp)", value=format_rp(proposed_fee_raw), disabled=True
+            ed_up = st.text_input("U.p.", value=sv("up"), key=f"ed_up_{rk}")
+            ed_penugasan = st.text_input(
+                "Penugasan", value=sv("penugasan"), key=f"ed_penugasan_{rk}"
+            )
+            ed_alamat_2 = st.text_input(
+                "Alamat 2", value=sv("alamat_2"), key=f"ed_alamat_2_{rk}"
+            )
+            ed_kode_pos = st.text_input(
+                "Kode Pos", value=sv("kode_pos"), key=f"ed_kode_pos_{rk}"
+            )
+        fee_default = float(row.get("proposed_fee", 0) or 0) / 1.11
+        ed_fee_str = st.text_input(
+            "Proposed Fee Sebelum PPN (Rp)",
+            value=format_rp(fee_default),
+            key=f"ed_fee_{rk}",
+            help="Nilai dari sheet dibagi 1,11 untuk mendapatkan fee sebelum PPN (11%)",
+        )
+        proposed_fee_raw = float(re.sub(r"[^\d.,]", "", ed_fee_str).replace(".", "").replace(",", ".") or 0)
+        ed_kode_penyusun = st.text_input(
+            "Kode Penyusun",
+            value=sv("kode_penyusun"),
+            key=f"ed_kode_penyusun_{rk}",
+            help="Kode penyusun laporan, diambil dari kolom kode_penyusun di spreadsheet",
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -646,11 +689,16 @@ with col_left:
             tgl_srt = st.date_input(
                 "Tgl_Srt (Tanggal Surat)", value=date.today(), key="tgl_srt"
             )
+            auto_kode_pt = extract_kode_pt(ed_no_proposal)
             kode_pt = st.text_input(
                 "Kode_PT",
-                value="",
+                value=auto_kode_pt,
                 placeholder="Contoh: BBRI, MS, UNVR…",
-                key="kode_pt",
+                key=f"kode_pt_{ed_no_proposal}",
+                help=(
+                    "Otomatis diambil dari No. Proposal "
+                    "(segmen sebelum segmen terakhir), bisa diedit manual"
+                ),
             )
             tagih_ke = st.text_input(
                 "Tagih_ke",
@@ -726,17 +774,17 @@ with col_left:
     bank_info = BANK_OPTIONS[bank_sel]
 
     def build_reps():
-        penugasan_asli = sv("penugasan")
+        penugasan_asli = ed_penugasan
         reps = {
             "{{Nomor_Srt}}": nomor_srt,
             "{{Kode_PT}}": kode_pt,
             "{{Tgl_Srt}}": format_tgl(tgl_srt),
             "{{pemberi_tugas}}": sv("pemberi_tugas") or selected_pt,
-            "{{alamat_1}}": sv("alamat_1"),
-            "{{alamat_2}}": sv("alamat_2"),
-            "{{kota}}": sv("kota"),
-            "{{kode_pos}}": sv("kode_pos"),
-            "{{up}}": sv("up"),
+            "{{alamat_1}}": ed_alamat_1,
+            "{{alamat_2}}": ed_alamat_2,
+            "{{kota}}": ed_kota,
+            "{{kode_pos}}": ed_kode_pos,
+            "{{up}}": ed_up,
             # Variasi tagih_ke
             "{{tagih_ke}}": str(tagih_ke).lower(),
             "{{Tagih_ke}}": str(tagih_ke).title(),
@@ -745,8 +793,8 @@ with col_left:
             "{{penugasan}}": penugasan_asli.lower(),
             "{{Penugasan}}": penugasan_asli.title(),
             "{{PENUGASAN}}": penugasan_asli.upper(),
-            "{{no_proposal}}": sv("no_proposal"),
-            "{{tanggal_proposal}}": sv("tanggal_proposal"),
+            "{{no_proposal}}": ed_no_proposal,
+            "{{tanggal_proposal}}": ed_tanggal_proposal,
             "{{proposed_fee}}": format_rp(proposed_fee_raw),
             "{{persentase}}": pct_label,
             "{{Fee_Tagih}}": format_rp(fee_tagih),
@@ -758,6 +806,7 @@ with col_left:
             "{{Norek}}": bank_info["norek"],
             "{{title_Up}}": title_up,
             "{{title_up}}": title_up,
+            "{{kode_penyusun}}": ed_kode_penyusun,
         }
         if "nama_file" in df_pt.columns:
             reps["{{nama_file}}"] = sv("nama_file")
@@ -836,12 +885,12 @@ with col_right:
 <b>Tgl:</b> {format_tgl(tgl_srt)}<br><br>
 <b>Kepada Yth.</b><br>
 {selected_pt}<br>
-{sv('alamat_1')}<br>
-{sv('alamat_2')}<br>
-{sv('kota')} {sv('kode_pos')}<br>
-<small>U.p.: {sv('up')}</small><br><br>
+{ed_alamat_1}<br>
+{ed_alamat_2}<br>
+{ed_kota} {ed_kode_pos}<br>
+<small>U.p.: {ed_up}</small><br><br>
 <b>Hal: Penagihan {tagih_ke}</b><br>
-{sv('penugasan')}<br><br>
+{ed_penugasan}<br><br>
 <table width="100%" style="font-size:0.85rem;border-collapse:collapse">
 <tr><td>Fee ({pct_label_p} × {format_rp(proposed_fee_raw)})</td>
     <td align="right"><b>Rp {format_rp(fee_tagih)}</b></td></tr>
