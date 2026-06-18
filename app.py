@@ -217,7 +217,7 @@ def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
         df["proposed_fee"] = pd.to_numeric(
             df["proposed_fee"]
             .astype(str)
-            .str.replace(r"[^\d.]", "", regex=True),
+            .str.replace(r"[^\d]", "", regex=True),
             errors="coerce",
         ).fillna(0)
     else:
